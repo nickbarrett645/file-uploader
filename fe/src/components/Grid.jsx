@@ -1,9 +1,15 @@
 import React from 'react';
 import Row from './Row'
 
-const Grid = () => {
+const Grid = ({fileList}) => {
 	return (
-		<Row/>
+		<>
+		{
+			!fileList.length ?
+			<div>No Uploaded Files</div>
+			: fileList.map( file => <Row file={file}/> )
+		}
+		</>
 	);
 };
 

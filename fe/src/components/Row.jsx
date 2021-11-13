@@ -1,9 +1,14 @@
 import React from 'react';
 import Cell from './Cell';
 
-const Row = () => {
+const Row = ({file}) => {
 	return (
-		<Cell/>
+		<div>
+			<Cell value={file.customer} />
+			<Cell value={file.name} />
+			<Cell value={file.date} />
+			<Cell value={file.size} />
+		</div>
 	);
 };
 

@@ -1,8 +1,8 @@
 import React from 'react';
 
-const Cell = () => {
+const Cell = ({value}) => {
 	return (
-		<div>Cell</div>
+		<div>{value}</div>
 	);
 };
 

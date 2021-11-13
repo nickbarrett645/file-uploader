@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Grid from '../components/Grid';
 
 const ListView = () => {
+	const [fileList] = useState([])
 	return (
-		<Grid/>
+		<Grid fileList={fileList}/>
 	);
 };
 
