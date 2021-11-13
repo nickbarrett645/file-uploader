@@ -12,7 +12,7 @@ const UploadView = () => {
 		<>
 		<h1>Customer File Upload Portal</h1>
 		<div>
-			<input type="file" onChange={onFileChange}/>
+			<input type="file" accept=".tgz"onChange={onFileChange}/>
 			<button onClick={onFileUpload}>Upload</button>
 		</div>
 		</>
