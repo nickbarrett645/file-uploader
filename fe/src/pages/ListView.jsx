@@ -1,8 +1,9 @@
-import React from "react";
+import React from 'react';
+import Grid from '../components/Grid';
 
 const ListView = () => {
 	return (
-		<div>List View</div>
+		<Grid/>
 	);
 };
 
