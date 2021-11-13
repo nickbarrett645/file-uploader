@@ -1,11 +1,14 @@
-import logo from './logo.svg';
+import {Routes, Route} from 'react-router-dom';
+import UploadView from './pages/UploadView';
+import ListView from './pages/ListView';
 import './App.css';
 
 function App() {
   return (
-    <div className="App">
-      File Uploader App
-    </div>
+	<Routes>
+		<Route path="/" element={<UploadView/>}/>
+		<Route path="support" element={<ListView/>}/>
+	</Routes>
   );
 }
 
