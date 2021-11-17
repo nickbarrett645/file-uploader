@@ -1,8 +1,9 @@
 import React from 'react';
+import './Cell.css';
 
-const Cell = ({value}) => {
+const Cell = ({value, role}) => {
 	return (
-		<div>{value}</div>
+		<div className={role}>{value}</div>
 	);
 };
 
