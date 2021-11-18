@@ -3,6 +3,7 @@ const fileUpload = require('express-fileupload');
 const path = require('path');
 const AWS = require('aws-sdk');
 const uuid = require('uuid');
+const stream = require('stream');
 require('dotenv').config();
 
 const app = express();
@@ -35,23 +36,23 @@ app.use('/upload', fileUploadValidation);
 
 app.post('/upload', async (req, res) => {
 	const file = req.files.file;
-
+	const fileID = uuid.v1();
 	const s3Params = {
 		Bucket: process.env.AWS_BUCKET_NAME,
-		Key: file.name,
+		Key: fileID,
 		Body: file.data
 	};
 
 	const dynamoParams = {
 		TableName: 'file-uploader-nb',
 		Item: {
-			fileID: uuid.v1(),
+			fileID: fileID,
 			fileName: file.name,
 			fileSize: file.size,
 			customer: 'important customer',
 			uploadDate: Date.now()
 		}
-	}
+	};
 
 	const responses = await Promise.allSettled([
 		dynamoDBPut(dynamoParams, res),
@@ -67,12 +68,20 @@ app.post('/upload', async (req, res) => {
 
 });
 
-app.get('/files', (req, res) => {
-	return res.send('Files list');
+app.get('/files', async (req, res) => {
+	const dynamoParams = {
+		TableName: 'file-uploader-nb'
+	};
+
+	return getAllFiles(dynamoParams, res);
 } );
 
 app.get('/download/:fileID', (req, res) => {
-	return res.send('Download file');
+	const s3Params = {
+		Bucket: process.env.AWS_BUCKET_NAME,
+		Key: '35ee0f30-4820-11ec-8609-f108bdb2606b'
+	};
+	return downloadFile(s3Params, res);
 } );
 
 app.use( (req, res) => {
@@ -98,6 +107,28 @@ const dynamoDBPut = (params) => {
 		} else {
 			console.log(`Saved ${params.Item.fileName} successfully to DynamoDB`);
 		}
+	} );
+};
+
+const getAllFiles = (params, res) => {
+	return docClient.scan(params, (err, data) => {
+		if(err) {
+			console.error('Error: Failed to get files.')
+			console.error(err);
+		} else {
+			res.send(data.Items);
+		}
+	})
+};
+
+const downloadFile = (params, res) => {
+	return s3.getObject(params, (err, data) => {
+		if(err) {
+			console.error(`Error: Failed to download file: ${params.Key}`);
+			console.error(err);
+		}
+
+		return stream.Readable.from(data.Body).pipe(res.set('Content-Type', 'application/octet-stream').set('Content-Disposition', 'inline; filename=bundle.tgz'))
 	} );
 };
 
