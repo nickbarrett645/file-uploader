@@ -2,39 +2,54 @@ import React from 'react';
 import GridHeader from './GridHeader';
 import Row from './Row';
 import axios from 'axios';
+import streamSaver from 'streamsaver';
 
 const Grid = ({fileList}) => {
+	const chunkSize = 5242880; // 5MB
 
-	const handleDownload = (fileID) => {
-		axios(`/download/${fileID}`)
-		.then((response) => response.blob())
-		.then((blob) => {
-			// Create blob link to download
-			const url = window.URL.createObjectURL(
-			new Blob([blob]),
-			);
-			const link = document.createElement('a');
-			link.href = url;
-			link.setAttribute(
-			'download',
-			`FileName.pdf`,
-			);
+	const handleDownload = async (fileID, fileSize) => {
+		const params = new URLSearchParams();
+		const chunksTotal = Math.ceil(fileSize / chunkSize);
+		const fileStream = streamSaver.createWriteStream(`${fileID}.tgz`);
+		const writer = fileStream.getWriter();
+		let chuncksDownloaded = 0;
+		let start = 0;
 
-			// Append to html link element page
-			document.body.appendChild(link);
+		params.set('start', start);
+		while(chuncksDownloaded < chunksTotal) {
+			let reading = true;
+			try {
+				let response = await downloadChunk(fileID, params);
+				const reader = response.body.getReader();
+				while(reading) {
+					const res = await reader.read();
+					if(res.done) {
+						reading = false;
+					} else {
+						console.log(res.value.length);
+						await writer.write(res.value);
+					}
+				}
 
-			// Start download
-			link.click();
-
-			// Clean up and remove the link
-			link.parentNode.removeChild(link);
-		});
+				chuncksDownloaded++;
+			} catch(err) {
+				chuncksDownloaded = chunksTotal;
+				console.log(err);
+			}
+			params.set('start', start + chunkSize * chuncksDownloaded+1);
+		}
+		writer.close();
 	};
+
+	const downloadChunk = (fileID, params) => {
+		return fetch(`/download/${fileID}?${params.toString()}`);
+	};
+
 	return (
 		<>
 			<GridHeader/>
 			{
-				fileList.map( (file, index)  => <Row key={index}file={file} handleDownload={() => handleDownload(file.fileID)}/> )
+				fileList.map( (file, index)  => <Row key={index}file={file} handleDownload={() => handleDownload(file.fileID, file.fileSize)}/> )
 			}
 		</>
 	);

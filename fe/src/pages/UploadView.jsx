@@ -5,9 +5,6 @@ import axios from 'axios';
 const UploadView = () => {
 	const chunkSize = 5242880; // 5MB
 
-	//const [chunkNumber, setChunkNumber] = useState(1);
-
-
 	const onFileChange = (event) => {
 		console.log('file changed');
 	};

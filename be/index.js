@@ -6,6 +6,7 @@ const AWS = require('aws-sdk');
 const uuid = require('uuid');
 const stream = require('stream');
 const bodyParser = require('body-parser');
+const Readable = require('stream').Readable;
 require('dotenv').config();
 
 const app = express();
@@ -19,9 +20,14 @@ const s3 = new AWS.S3({
 	secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
 });
 
+const chunkSize = 5242880; // 5MB
+
 const docClient = new AWS.DynamoDB.DocumentClient();
 
 app.use(bodyParser.raw({type:'application/octet-stream', limit: '6mb'}));
+app.get('/test-download/:fileID', async (req, res) => {
+	return res.send(`${req.query.start}`);
+});
 app.get('/upload', async(req, res) => {
 	const fileID = uuid.v1();
 	const s3Params = {
@@ -140,12 +146,30 @@ app.get('/files', async (req, res) => {
 
 } );
 
-app.get('/download/:fileID', (req, res) => {
+app.get('/download/:fileID', async (req, res) => {
+	const start = req.query.start;
+	const end = start + chunkSize;
+
 	const s3Params = {
 		Bucket: process.env.AWS_BUCKET_NAME,
-		Key: '35ee0f30-4820-11ec-8609-f108bdb2606b'
+		Key: req.params.fileID,
+		Range: `bytes=${start}-${end}`
 	};
-	return downloadFile(s3Params, res);
+	try{
+		const response = await downloadFile(s3Params);
+		const readable = Readable.from(response.Body);
+		readable.on("data", (data) => {
+			res.write(data);
+		});
+
+		readable.on('end', (data) => {
+			return res.status(200).send();
+		})
+	} catch(err) {
+		console.error('Error: Failed to download chunk of file.');
+		console.error(err);
+		return res.status(500).send({msg: 'Error: Failed to download file.'})
+	}
 } );
 
 app.use( (req, res) => {
@@ -233,15 +257,8 @@ const getAllFiles = (params) => {
 	return docClient.scan(params).promise();
 };
 
-const downloadFile = (params, res) => {
-	return s3.getObject(params, (err, data) => {
-		if(err) {
-			console.error(`Error: Failed to download file: ${params.Key}`);
-			console.error(err);
-		}
-
-		return stream.Readable.from(data.Body).pipe(res.set('Content-Type', 'application/octet-stream').set('Content-Disposition', 'inline; filename=bundle.tgz'))
-	} );
+const downloadFile = (params) => {
+	return s3.getObject(params).promise();
 };
 
 app.listen(3001)
