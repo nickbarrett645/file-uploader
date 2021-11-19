@@ -1,9 +1,11 @@
 const express = require('express');
 const fileUpload = require('express-fileupload');
-const path = require('path');
+const fs = require('fs');
+const readline = require('readline')
 const AWS = require('aws-sdk');
 const uuid = require('uuid');
 const stream = require('stream');
+const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const app = express();
@@ -19,51 +21,103 @@ const s3 = new AWS.S3({
 
 const docClient = new AWS.DynamoDB.DocumentClient();
 
-const fileUploadValidation = (req, res, next) => {
-	if( !req.files ) {
-		return res.status(500).send({ msg: 'Error: File is not found.' })
-	}
-
-	if( path.extname(req.files.file.name) !== '.tgz' ) {
-		return res.status(400).send({msg: 'Error: Incorrect file type uploaded. Please upload a GZipped TAR.'})
-	}
-
-	next();
-};
-
-app.use(fileUpload());
-app.use('/upload', fileUploadValidation);
-
-app.post('/upload', async (req, res) => {
-	const file = req.files.file;
+app.use(bodyParser.raw({type:'application/octet-stream', limit: '6mb'}));
+app.get('/upload', async(req, res) => {
 	const fileID = uuid.v1();
 	const s3Params = {
 		Bucket: process.env.AWS_BUCKET_NAME,
 		Key: fileID,
-		Body: file.data
 	};
 
-	const dynamoParams = {
-		TableName: 'file-uploader-nb',
-		Item: {
-			fileID: fileID,
-			fileName: file.name,
-			fileSize: file.size,
-			customer: 'important customer',
-			uploadDate: Date.now()
+	try {
+		const results = await createMultiPartUpload(s3Params);
+		console.log('Success: Created multipart upload in S3');
+
+		fs.open(fileID, 'w', (err, data) => {
+			if(err) {
+				throw err;
+			}
+			console.log('Success: Created file to store PartNumbers and ETags');
+			return res.send(results);
+		});
+	} catch(err) {
+		console.error(`Error: Failed to save ${s3Params.Key} file to s3`);
+		console.error(err);
+		return res.status(500).send({msg: 'Error: Failed to start upload process. Please Contact Nick\'s Software Company Support Team'});
+	}
+} );
+
+app.post('/upload', async (req, res) => {
+	if(!req.query.UploadId) {
+		return res.status(400).send({msg: 'Error: Missing UploadID'});
+	}
+
+	if(!req.query.Key) {
+		return res.status(400).send({msg: 'Error: Missing Key'});
+	}
+
+	if(!req.query.totalChunks) {
+		return res.status(400).send({msg: 'Error: Missing totalChunks'});
+	}
+
+	if(!req.query.chunkNumber) {
+		return res.status(400).send({msg: 'Error: Missing chunkNumber'});
+	}
+
+	if(!req.query.fileName) {
+		return res.status(400).send({msg: 'Error: Missing fileName'});
+	}
+
+	if(!req.query.fileSize) {
+		return res.status(400).send({msg: 'Error: Missing fileSize'});
+	}
+
+	const s3Params = {
+		Body: req.body,
+		Bucket: process.env.AWS_BUCKET_NAME,
+		Key: req.query.Key,
+		PartNumber: req.query.chunkNumber,
+		UploadId: req.query.UploadId
+	};
+
+	try {
+		const results = await uploadPart(s3Params);
+		fs.writeFile(req.query.Key, `${req.query.chunkNumber},${results.ETag}\n`, {flag: 'a+'}, (err, datat) => {
+			if(err) {
+				throw err;
+			}
+		});
+	} catch(err) {
+		console.error('Error: Part failed to upload to S3');
+		console.error(err);
+
+		delete s3Params.PartNumber;
+		delete s3Params.Body;
+		try {
+			await abortUpload(s3Params);
+		} catch(err) {
+			console.error('Error: Failed to abort upload');
+			console.error(err);
+			return res.status(500).send({msg: 'Error: Part of file failed to upload.'});
 		}
-	};
 
-	const responses = await Promise.allSettled([
-		dynamoDBPut(dynamoParams, res),
-		s3Upload(s3Params, res)
-	]);
+		return res.status(500).send({msg: 'Error: Part of file failed to upload.'});
+	}
 
-	if(responses[0].status ==='rejected' || responses[1].status === 'rejected' ) {
+	delete s3Params.PartNumber;
+	delete s3Params.Body;
 
-		return res.status(500).send({msg: `Error: Failed to save ${file.name}. Please Contact Nick's Software Company Support Team`});
-	} else {
-		return res.send({msg: `Success: ${file.name} was uploaded successfully.`});
+	try {
+		if( req.query.chunkNumber === req.query.totalChunks ) {
+			await completeUpload(s3Params, req.query.fileName, req.query.fileSize, res);
+		} else {
+			res.status(204).send({msg: 'Success'});
+		}
+	} catch(err) {
+		console.error('Error: Part failed to upload to S3');
+		console.error(err);
+
+		return res.status(500).send({msg: 'Error: File to complete file upload.'});
 	}
 
 });
@@ -73,7 +127,17 @@ app.get('/files', async (req, res) => {
 		TableName: 'file-uploader-nb'
 	};
 
-	return getAllFiles(dynamoParams, res);
+	try {
+		const results = await getAllFiles(dynamoParams);
+
+		return res.send(results.Items);
+	} catch(err) {
+		console.error('Error: Failed to get files.');
+		console.error(err);
+
+		return res.status({msg: 'Error: Failed to retrieve the files.'});
+	}
+
 } );
 
 app.get('/download/:fileID', (req, res) => {
@@ -88,15 +152,70 @@ app.use( (req, res) => {
 	return res.status(404).send({msg: 'Error: Invalid request.'})
 });
 
-const s3Upload = (params) => {
-	return s3.upload( params, (err, data) => {
-		if(err) {
-			console.error(`Error: Failed to save ${params.Key} file to s3`);
-			console.error(err);
-		} else {
-			console.log(`Saved ${params.Key} successfully to S3`);
+const createMultiPartUpload = (params) => {
+	return s3.createMultipartUpload(params).promise();
+};
+
+const uploadPart = (params) => {
+	return s3.uploadPart(params).promise();
+};
+
+const completeUpload = async (s3Params, fileName, fileSize, res) => {
+	let parts = []
+	const lines = readline.createInterface({
+		input: fs.createReadStream(s3Params.Key),
+		crlfDelay: Infinity
+	});
+
+	for await(const line of lines) {
+		let lineParts = line.split(',');
+		parts.push({PartNumber: lineParts[0], ETag: lineParts[1].replace(/['"]+/g, '')});
+	}
+
+	s3Params.MultipartUpload = {
+		Parts: parts
+	};
+
+	const dynamoParams = {
+		TableName: process.env.AWS_DYNAMO_TABLE,
+		Item: {
+			fileID: s3Params.Key,
+			fileName: fileName,
+			fileSize: fileSize,
+			customer: 'important customer',
+			uploadDate: Date.now()
 		}
-	} );
+	};
+
+	delete s3Params.PartNumber;
+
+	try {
+		await completeS3Upload(s3Params);
+		await dynamoDBPut(dynamoParams);
+		await fs.unlink(s3Params.Key, (err, data) => {
+			if(err) {
+				throw err;
+			}
+		});
+		return res.send({msg: "Success: Uploaded file."});
+	} catch(err) {
+		console.error('Error: Failed to complete multipart upload');
+		console.error(err);
+		return res.status(500).send({msg: "Error: Failed to upload file."});
+	}
+};
+
+const completeS3Upload = async (params) => {
+	return s3.completeMultipartUpload(params, (err, data) => {
+		if(err) {
+			console.error('Error: Failed to complete multi part upload');
+			console.error(err);
+		}
+	});
+};
+
+const abortUpload = async(params) => {
+	return s3.abortMultipartUpload(params).promise();
 };
 
 const dynamoDBPut = (params) => {
@@ -110,15 +229,8 @@ const dynamoDBPut = (params) => {
 	} );
 };
 
-const getAllFiles = (params, res) => {
-	return docClient.scan(params, (err, data) => {
-		if(err) {
-			console.error('Error: Failed to get files.')
-			console.error(err);
-		} else {
-			res.send(data.Items);
-		}
-	})
+const getAllFiles = (params) => {
+	return docClient.scan(params).promise();
 };
 
 const downloadFile = (params, res) => {
@@ -132,4 +244,4 @@ const downloadFile = (params, res) => {
 	} );
 };
 
-app.listen(3000)
+app.listen(3001)

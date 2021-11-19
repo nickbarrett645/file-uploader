@@ -6,11 +6,10 @@ const Row = ({file, handleDelete, handleDownload}) => {
 	return (
 		<div className="row">
 			<Cell value={file.customer} />
-			<Cell value={file.name} />
-			<Cell value={file.date} />
-			<Cell value={file.size} />
+			<Cell value={file.fileName} />
+			<Cell value={new Date(file.uploadDate).toDateString()} />
+			<Cell value={file.fileSize} />
 			<button onClick={handleDownload}>Download File</button>
-			<button onClick={handleDelete}>Delete File</button>
 		</div>
 	);
 };
