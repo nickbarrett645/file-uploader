@@ -5,6 +5,7 @@ const AWS = require('aws-sdk');
 const uuid = require('uuid');
 const bodyParser = require('body-parser');
 const Readable = require('stream').Readable;
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -21,11 +22,9 @@ const s3 = new AWS.S3({
 const chunkSize = 5242880; // 5MB
 
 const docClient = new AWS.DynamoDB.DocumentClient();
-
+app.use(express.static("../fe/build"))
 app.use(bodyParser.raw({type:'application/octet-stream', limit: '6mb'}));
-app.get('/test-download/:fileID', async (req, res) => {
-	return res.send(`${req.query.start}`);
-});
+
 // Sets up an S3 Multipart upload
 app.get('/upload', async(req, res) => {
 	const fileID = uuid.v1();
@@ -265,4 +264,4 @@ const downloadFile = (params) => {
 	return s3.getObject(params).promise();
 };
 
-app.listen(3001)
+app.listen(3000)
