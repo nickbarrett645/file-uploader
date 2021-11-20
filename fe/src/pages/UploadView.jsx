@@ -1,18 +1,29 @@
-import React, {useState, useEffect} from 'react';
-import {Link} from 'react-router-dom';
+import React, {useState} from 'react';
 import axios from 'axios';
+import './UploadView.css';
 
 const UploadView = () => {
+	const [success, setSuccess] = useState('');
+	const [error, setError] = useState('');
+	const [progress, setProgress] = useState('');
 	const chunkSize = 5242880; // 5MB
 
-	const onFileChange = (event) => {
-		console.log('file changed');
+	const handleChange = () => {
+		setSuccess('');
+		setError('');
+		setProgress('');
 	};
 
 	const onFileUpload = async () => {
 		const {data} = await axios('upload');
 		const file = document.getElementById('fileupload').files[0];
-		uploadChunks(data, file, 0, 1);
+		if(file) {
+			setProgress('File Upload In Progress...');
+			uploadChunks(data, file, 0, 1);
+		} else {
+			setError('Error: No File Selected');
+		}
+
 	};
 
 	const uploadChunks = (data, file, start, chunkNumber) => {
@@ -26,7 +37,6 @@ const UploadView = () => {
 
 
 	const uploadChunk = (event, data, file, end, chunkNumber) => {
-		console.log('In upload chunk');
 		const chunk = event.target.result;
 		const params = new URLSearchParams();
 		params.set('UploadId', data.UploadId);
@@ -39,26 +49,34 @@ const UploadView = () => {
 		const config = {
 			headers: headers
 		};
+
 		axios.post(`upload?${params.toString()}`, chunk, config)
 		.then(response => {
-			console.log('SUCCESS');
+
 			if( response.status === 204) {
 				uploadChunks(data, file, end, chunkNumber+1);
+			} else {
+				setProgress('');
+				setSuccess('Success: File Uploaded Successfully');
 			}
 
-		})
-		.catch(err => {
+		}).catch(err => {
 			console.log(err);
-		})
+			setProgress('');
+			setError('Error: Failed to Upload File');
+		});
 	};
 
 	return (
 		<>
 		<h1>Customer File Upload Portal</h1>
-		<Link to='/support'>Support</Link>
+
 		<div>
-			<input name="fileupload" id='fileupload' type='file' accept='.tgz'onChange={onFileChange}/>
+			<input name="fileupload" id='fileupload' type='file' accept='.tgz' onChange={handleChange}/>
 			<button onClick={onFileUpload}>Upload</button>
+			<div className="error">{error}</div>
+			<div className="success">{success}</div>
+			<div className="progress">{progress}</div>
 		</div>
 		</>
 	);

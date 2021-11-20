@@ -1,10 +1,8 @@
 const express = require('express');
-const fileUpload = require('express-fileupload');
 const fs = require('fs');
 const readline = require('readline')
 const AWS = require('aws-sdk');
 const uuid = require('uuid');
-const stream = require('stream');
 const bodyParser = require('body-parser');
 const Readable = require('stream').Readable;
 require('dotenv').config();
@@ -28,6 +26,7 @@ app.use(bodyParser.raw({type:'application/octet-stream', limit: '6mb'}));
 app.get('/test-download/:fileID', async (req, res) => {
 	return res.send(`${req.query.start}`);
 });
+// Sets up an S3 Multipart upload
 app.get('/upload', async(req, res) => {
 	const fileID = uuid.v1();
 	const s3Params = {
@@ -39,6 +38,8 @@ app.get('/upload', async(req, res) => {
 		const results = await createMultiPartUpload(s3Params);
 		console.log('Success: Created multipart upload in S3');
 
+		// The multipart download requires all part numbers and ETags so Im saving
+		// them in a flat file that I parse when the upload is complete
 		fs.open(fileID, 'w', (err, data) => {
 			if(err) {
 				throw err;
@@ -53,6 +54,7 @@ app.get('/upload', async(req, res) => {
 	}
 } );
 
+// Function to handle the actual chunk uploads
 app.post('/upload', async (req, res) => {
 	if(!req.query.UploadId) {
 		return res.status(400).send({msg: 'Error: Missing UploadID'});
@@ -128,6 +130,7 @@ app.post('/upload', async (req, res) => {
 
 });
 
+// Function to get the list of files
 app.get('/files', async (req, res) => {
 	const dynamoParams = {
 		TableName: 'file-uploader-nb'
@@ -146,6 +149,7 @@ app.get('/files', async (req, res) => {
 
 } );
 
+// Function to download a file
 app.get('/download/:fileID', async (req, res) => {
 	const start = req.query.start;
 	const end = start + chunkSize;

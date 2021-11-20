@@ -1,7 +1,6 @@
 import React from 'react';
 import GridHeader from './GridHeader';
 import Row from './Row';
-import axios from 'axios';
 import streamSaver from 'streamsaver';
 
 const Grid = ({fileList}) => {
@@ -16,17 +15,20 @@ const Grid = ({fileList}) => {
 		let start = 0;
 
 		params.set('start', start);
+
 		while(chuncksDownloaded < chunksTotal) {
 			let reading = true;
 			try {
+				// Download 1 5MB chunk at a time
+				// The chunk will be coming back as a readable stream
 				let response = await downloadChunk(fileID, params);
 				const reader = response.body.getReader();
+				// Read from the stream until it is done
 				while(reading) {
 					const res = await reader.read();
 					if(res.done) {
 						reading = false;
 					} else {
-						console.log(res.value.length);
 						await writer.write(res.value);
 					}
 				}

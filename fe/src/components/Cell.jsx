@@ -3,7 +3,7 @@ import './Cell.css';
 
 const Cell = ({value, role}) => {
 	return (
-		<div className={role}>{value}</div>
+		<div className={'cell ' + role}>{value}</div>
 	);
 };
 
