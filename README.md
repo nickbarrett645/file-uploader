@@ -24,3 +24,6 @@ To start the express server navigate to the `be` directory and run the npm comma
 `$ nodemon index.js`
 
 `nodemon` is used to automatically restart the node server when you make a change in your code.
+
+# Important
+For the backend to work successfullly you need to have an .env file with access keys for an S3 bucket and the name of the bucket and the name of the dynamodb table you are writing to.
